@@ -15,14 +15,16 @@ class BottomSL:
         self.optimizer = optimizer
     
     def bottom_forward(self, input):
+        return None
     
     def bottom_backward(self, gradient): #多分入力がサーバからの勾配になるはず
+        return None
     
     def zero_grads(self):
-        optimizer.zero_grad()
+        self.optimizer.zero_grad()
     
     def step(self):
-        optimizer.step()
+        self.optimizer.step()
 
 chunk_size = 1024
 epochs = 5

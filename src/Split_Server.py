@@ -8,6 +8,23 @@ import pickle
 import zlib
 from time import sleep
 
+class TopSL:
+    def __init__(self, model, optimizer):
+        self.model = model
+        self.optimizer = optimizer
+    
+    def top_forward(self, smashed_data):
+        return None
+    
+    def top_backward(self):
+        return None
+
+    def zero_grads(self):
+        self.optimizer.zero_grad()
+
+    def step(self):
+        self.optimizer.step()   
+
 
 #基本設定
 epochs = 5
@@ -80,6 +97,9 @@ print(">> Finished receiving label from Client\n")
 print("---Sorting label---")
 train_label = sorted(train_label, key=lambda x:x[1])
 print(">> Finished sorting label\n")
+
+
+
 
 sleep(5)
 
