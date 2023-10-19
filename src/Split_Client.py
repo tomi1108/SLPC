@@ -77,10 +77,24 @@ print(">> Finished sending label to Server\n")
 
 BottomSL = BottomSL(bottom_model, optimizer)
 
-def train(input, label, BottomSL):
+"""
+train(input, gradient, BottomSL)
+入力はデータセットのデータ、サーバからの勾配、BottomSLのインスタンス
+"""
+def train(input, gradient, BottomSL):
 
     #1) Zero our grads
     BottomSL.zero_grads()
+
+    #2) Make a smashed data
+    smashed_data = BottomSL.bottom_forward(input)
+
+    #3) Backward
+    BottomSL.bottom_backward(gradient)
+
+    #4) Change the weights
+    BottomSL.step()
+
 
 
 
