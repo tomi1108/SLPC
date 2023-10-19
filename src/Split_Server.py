@@ -63,8 +63,10 @@ while start < len(compressed_model):
     connection.sendall(compressed_model[start:end])
     start = end
 print(">> Finished sending compressed model to Client\n")
+#上位モデルの定義
+top_model = models[1]
 
-#クライアントから学習データに付与するIDを受け取る
+#クライアントからラベルを受信
 print("---Receiving label from Client---")
 compressed_label = b""
 while True:
@@ -75,15 +77,11 @@ while True:
 uncompressed_label = zlib.decompress(compressed_label)
 train_label = pickle.loads(uncompressed_label)
 print(">> Finished receiving label from Client\n")
-#ID順にソートします
 print("---Sorting label---")
 train_label = sorted(train_label, key=lambda x:x[1])
 print(">> Finished sorting label\n")
 
 sleep(5)
-
-#上位モデルの定義
-top_model = models[1]
 
 print("---Disconnection---")
 connection.close()

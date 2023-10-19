@@ -9,7 +9,23 @@ import zlib
 
 import module.about_id as id
 
+class BottomSL:
+    def __init__(self, model, optimizer):
+        self.model = model
+        self.optimizer = optimizer
+    
+    def bottom_forward(self, input):
+    
+    def bottom_backward(self, gradient): #多分入力がサーバからの勾配になるはず
+    
+    def zero_grads(self):
+        optimizer.zero_grad()
+    
+    def step(self):
+        optimizer.step()
+
 chunk_size = 1024
+epochs = 5
 
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_address = ('localhost', 10000)
@@ -28,6 +44,8 @@ print(">> Finished receiving compressed model from Server\n")
 #下位モデルの解凍・デシリアライズ
 uncomporessed_model = zlib.decompress(compressed_model)
 bottom_model = pickle.loads(uncomporessed_model)
+
+optimizer = optim.SGD(bottom_model.parameters(), lr=0.003,)
 
 #データセットの読み込み
 load_file = "./../dataset/MNIST/MNIST.pkl"
@@ -56,6 +74,13 @@ while start < len(compressed_label):
     client_socket.sendall(compressed_label[start:end])
     start = end
 print(">> Finished sending label to Server\n")
+
+BottomSL = BottomSL(bottom_model, optimizer)
+
+def train(input, label, BottomSL):
+
+    #1) Zero our grads
+    BottomSL.zero_grads()
 
 
 
