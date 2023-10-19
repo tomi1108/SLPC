@@ -8,6 +8,7 @@ import pickle
 import zlib
 from time import sleep
 
+
 #基本設定
 epochs = 5
 input_size = 784
@@ -61,11 +62,23 @@ while start < len(compressed_model):
     end = start + chunk_size
     connection.sendall(compressed_model[start:end])
     start = end
-connection.sendall(b"END")
-print(">> Finished sending compressed model to Client")
+print(">> Finished sending compressed model to Client\n")
 
-message = connection.recv(1024)
-print(message.decode())
+#クライアントから学習データに付与するIDを受け取る
+print("---Receiving label from Client---")
+compressed_label = b""
+while True:
+    chunk = connection.recv(1024)
+    compressed_label += chunk
+    if len(chunk) < 1024:
+        break
+uncompressed_label = zlib.decompress(compressed_label)
+train_label = pickle.loads(uncompressed_label)
+print(">> Finished receiving label from Client\n")
+#ID順にソートします
+print("---Sorting label---")
+train_label = sorted(train_label, key=lambda x:x[1])
+print(">> Finished sorting label\n")
 
 sleep(5)
 

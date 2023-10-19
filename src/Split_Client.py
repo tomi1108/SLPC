@@ -9,6 +9,8 @@ import zlib
 
 import module.about_id as id
 
+chunk_size = 1024
+
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_address = ('localhost', 10000)
 
@@ -21,10 +23,7 @@ while True:
     compressed_model += chunk
     if len(chunk) < 1024:
         break
-print(">> Client received compressed model.\n")
-
-message = ">> Client received bottom model.\n"
-client_socket.sendall(message.encode('utf-8'))
+print(">> Finished receiving compressed model from Server\n")
 
 #下位モデルの解凍・デシリアライズ
 uncomporessed_model = zlib.decompress(compressed_model)
@@ -42,6 +41,23 @@ test_label = dataset['test_label']
 
 #データセットにIDを付与して、順番を入れ替える
 train_data, train_label = id.add_ids(train_data, train_label)
+"""
+ここにテストデータセットについても同様の処理を行うような記述を追加する
+"""
+
+#Serverにラベルを送信する
+print("---Sending label to Server---")
+serialized_label = pickle.dumps(train_label)
+compressed_label = zlib.compress(serialized_label)
+
+start = 0
+while start < len(compressed_label):
+    end = start + chunk_size
+    client_socket.sendall(compressed_label[start:end])
+    start = end
+print(">> Finished sending label to Server\n")
+
+
 
 print("---Disconnection---")
 client_socket.close()
