@@ -12,17 +12,31 @@ server_address = ('localhost', 10000)
 
 client_socket.connect(server_address)
 
+print("---Receiving compressed model from Server---")
 compressed_model = b""
 while True:
     chunk = client_socket.recv(1024)
-    if not chunk:
-        break
     compressed_model += chunk
+    if len(chunk) < 1024:
+        break
+print(">> Client received compressed model.\n")
+
+message = ">> Client received bottom model.\n"
+client_socket.sendall(message.encode('utf-8'))
 
 #下位モデルの解凍・デシリアライズ
 uncomporessed_model = zlib.decompress(compressed_model)
 bottom_model = pickle.loads(uncomporessed_model)
 
-print(bottom_model)
+#データセットの読み込み
+load_file = "./../dataset/MNIST/MNIST.pkl"
+with open(load_file, 'rb') as f:
+    dataset = pickle.load(f)
 
+train_data = dataset["train_data"]
+train_label = dataset["train_label"]
+test_data = dataset["test_data"]
+test_label = dataset["test_label"]
+
+print("---Disconnection---")
 client_socket.close()

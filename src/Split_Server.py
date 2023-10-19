@@ -49,19 +49,25 @@ server_socket.bind(server_address)
 
 #クライアントと接続
 server_socket.listen(client_size)
-print(">> Waiting for client connection\n")
+print("---Waiting for client connection---")
 
 connection, client_address = server_socket.accept()
 print(f">> Client {client_address} connected.\n")
 
 #下位モデルの送信
-print(">> Sending compressed model to Client\n")
+print("---Sending compressed model to Client---")
 while start < len(compressed_model):
     end = start + chunk_size
     connection.sendall(compressed_model[start:end])
     start = end
+connection.sendall(b"END")
+print(">> Finished sending compressed model to Client")
+
+message = connection.recv(1024)
+print(message.decode())
 
 #上位モデルの定義
 top_model = models[1]
 
+print("---Disconnection---")
 connection.close()
