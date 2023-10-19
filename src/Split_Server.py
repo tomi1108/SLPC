@@ -6,6 +6,7 @@ from torchvision.transforms import ToTensor
 import socket
 import pickle
 import zlib
+from time import sleep
 
 #基本設定
 epochs = 5
@@ -65,6 +66,8 @@ print(">> Finished sending compressed model to Client")
 
 message = connection.recv(1024)
 print(message.decode())
+
+sleep(5)
 
 #上位モデルの定義
 top_model = models[1]

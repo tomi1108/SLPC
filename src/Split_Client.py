@@ -7,6 +7,8 @@ import socket
 import pickle
 import zlib
 
+import module.about_id as id
+
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_address = ('localhost', 10000)
 
@@ -32,11 +34,14 @@ bottom_model = pickle.loads(uncomporessed_model)
 load_file = "./../dataset/MNIST/MNIST.pkl"
 with open(load_file, 'rb') as f:
     dataset = pickle.load(f)
+train_data, train_label, test_data, test_label = [], [], [], []
+train_data = dataset['train_img']
+train_label = dataset['train_label']
+test_data = dataset['test_img']
+test_label = dataset['test_label']
 
-train_data = dataset["train_data"]
-train_label = dataset["train_label"]
-test_data = dataset["test_data"]
-test_label = dataset["test_label"]
+#データセットにIDを付与して、順番を入れ替える
+train_data, train_label = id.add_ids(train_data, train_label)
 
 print("---Disconnection---")
 client_socket.close()
