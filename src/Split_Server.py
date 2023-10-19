@@ -98,7 +98,32 @@ print("---Sorting label---")
 train_label = sorted(train_label, key=lambda x:x[1])
 print(">> Finished sorting label\n")
 
+"""
+train(shamsed_data, train_label, TopSL)
+入力はクライアントからのスマッシュデータ、クライアントからのラベル、TopSLのインスタンス
+出力は損失、予測値
+"""
+def train(smashed_data, train_label, TopSL):
+    #1) Zero our grads
+    TopSL.zero_grads()
 
+    #2) Make a prediction
+    pred = TopSL.top_forward(smashed_data)
+
+    #3) Figure out how much we missed by
+    criterion = nn.NLLLoss()
+    loss = criterion(pred, train_label)
+
+    #4) Backprop the loss on the end layer
+    loss.backward()
+
+    #5) Feed Gradients backward through the nework
+    TopSL.top_backward()
+
+    #6) Change the weights
+    TopSL.step()
+
+    return loss, pred
 
 
 sleep(5)

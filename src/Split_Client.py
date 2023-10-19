@@ -84,7 +84,6 @@ train(input, gradient, BottomSL)
 入力はデータセットのデータ、サーバからの勾配、BottomSLのインスタンス
 """
 def train(input, gradient, BottomSL):
-
     #1) Zero our grads
     BottomSL.zero_grads()
 
@@ -97,8 +96,7 @@ def train(input, gradient, BottomSL):
     #4) Change the weights
     BottomSL.step()
 
-
-
+    return None
 
 print("---Disconnection---")
 client_socket.close()
