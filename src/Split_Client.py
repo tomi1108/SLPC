@@ -6,9 +6,11 @@ from torchvision.transforms import ToTensor
 import socket
 import pickle
 import zlib
-
 import module.about_id as id
+from torch.utils.data import DataLoader
+import numpy as np
 
+##########################################################################################
 class BottomSL:
     def __init__(self, model, optimizer):
         self.model = model
@@ -29,6 +31,7 @@ class BottomSL:
 chunk_size = 1024
 epochs = 5
 
+##########################################################################################
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_address = ('localhost', 10000)
 
@@ -77,6 +80,8 @@ while start < len(compressed_label):
     start = end
 print(">> Finished sending label to Server\n")
 
+##########################################################################################
+dataloader = DataLoader(train_data, batch_size=128, shuffle=False)
 BottomSL = BottomSL(bottom_model, optimizer)
 
 """
@@ -97,6 +102,10 @@ def train(input, gradient, BottomSL):
     BottomSL.step()
 
     return None
+
+for i in range(epochs):
+
+    break
 
 print("---Disconnection---")
 client_socket.close()
