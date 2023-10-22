@@ -17,7 +17,8 @@ class TopSL:
     
     def top_forward(self, smashed_data):
         
-        tensor = smashed_data[0].detach().requires_grad_()
+        tensor = smashed_data[0].detach().requires_grad_(True)
+        gradient_tensor = torch.clone(tensor).detach().requires_grad_(True)
         preds = self.model(tensor)
 
         # for i in range(len(smashed_data)):
@@ -29,10 +30,12 @@ class TopSL:
         # self.preds = preds
         # self.tensor = tensor2
 
+        self.gradient_tensor = gradient_tensor
+
         return preds
     
     def top_backward(self):
-        grads = self.tensor2[0].grad.copy()
+        grads = self.gradient_tensor.grad
 
         return grads
 
@@ -136,8 +139,12 @@ for i in range(epochs):
     running_loss = 0
     correct_preds = 0
     total_preds = 0
+    count = 0
 
     for label, ids in dataloader:
+        count += 1
+        print(f"---Data {count}/{len(dataloader)}---")
+
         server_socket.listen(client_size)
         connection, client_address = server_socket.accept()
 
@@ -157,14 +164,14 @@ for i in range(epochs):
 
         #上位モデルの順伝播
         preds = TopSL.top_forward(smashed_data)
-
-        print(label)
-        print(ids)
         criterion = nn.NLLLoss()
         loss = criterion(preds, label)
 
+        print(loss)
+
         loss.backward()
-        grads = TopSL.backward()
+        grads = TopSL.top_backward()
+        print(grads)
         TopSL.step()
 
         serialized_grads = pickle.dumps(grads)
@@ -176,9 +183,9 @@ for i in range(epochs):
             connection.sendall(compressed_grads[start:end])
             start = end
 
-        running_loss += loss.get()
+        running_loss += loss.item()
         correct_preds += preds.max(1)[1].eq(label).sum().item()
-        total_preds += preds.get().size(0)
+        total_preds += preds.size(0)
 
         connection.close()
     print(f"Epoch {i} - Training loss: {running_loss/len(dataloader):.3f} - Training accuracy: {100*correct_preds/total_preds:.3f}\n")

@@ -129,12 +129,12 @@ for i in range(epochs):
                 break
             compressed_gradient += chunk
 
-        BottomSL.step()
-
         uncompressed_gradient = zlib.decompress(compressed_gradient)
         gradient = pickle.loads(uncompressed_gradient)
 
         BottomSL.bottom_backward(gradient)
+        BottomSL.step()
+
         client_socket.close()
 
 print("---Disconnection---")
