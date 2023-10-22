@@ -35,7 +35,7 @@ class BottomSL:
         self.optimizer.step()
 
 chunk_size = 1024
-epochs = 1 #ここはサーバ側と同じ値にする
+epochs = 5 #ここはサーバ側と同じ値にする
 
 ##########################################################################################
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -47,11 +47,10 @@ print("---Receiving compressed model from Server---")
 compressed_model = b""
 while True:
     chunk = client_socket.recv(1024)
-    if chunk.endswith(b"END"):
-        chunk = chunk[:-3]
-        compressed_model += chunk
-        break
     compressed_model += chunk
+    if compressed_model.endswith(b"END"):
+        compressed_model = compressed_model[:-3]
+        break
 
 print(">> Finished receiving compressed model from Server\n")
 
@@ -74,10 +73,6 @@ test_label = dataset['test_label']
 #データセットにIDを付与して、順番を入れ替える
 train_data, train_label = id.add_ids(train_data, train_label)
 
-
-
-
-
 #Serverにラベルを送信する
 print("---Sending label to Server---")
 serialized_label = pickle.dumps(train_label)
@@ -98,8 +93,11 @@ BottomSL = BottomSL(bottom_model, optimizer)
 
 for i in range(epochs):
     print(f"---Epoch {i+1}/{epochs}---")
+    count = 0
 
     for data, ids in dataloader:
+        # count += 1
+        # print(f"---Data {count}/{len(dataloader)}---")
         #サーバとのタイミングを同期
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_socket.connect(server_address)
@@ -123,11 +121,10 @@ for i in range(epochs):
         compressed_gradient = b""
         while True:
             chunk = client_socket.recv(1024)
-            if chunk.endswith(b"END"):
-                chunk = chunk[:-3]
-                compressed_gradient += chunk
-                break
             compressed_gradient += chunk
+            if compressed_gradient.endswith(b"END"):
+                compressed_gradient = compressed_gradient[:-3]
+                break
 
         uncompressed_gradient = zlib.decompress(compressed_gradient)
         gradient = pickle.loads(uncompressed_gradient)

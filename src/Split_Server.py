@@ -18,7 +18,7 @@ class TopSL:
     def top_forward(self, smashed_data):
         
         tensor = smashed_data[0].detach().requires_grad_(True)
-        gradient_tensor = torch.clone(tensor).detach().requires_grad_(True)
+        # gradient_tensor = torch.clone(tensor).detach().requires_grad_(True)
         preds = self.model(tensor)
 
         # for i in range(len(smashed_data)):
@@ -30,12 +30,16 @@ class TopSL:
         # self.preds = preds
         # self.tensor = tensor2
 
-        self.gradient_tensor = gradient_tensor
+        # self.gradient_tensor = gradient_tensor
+        self.tensor = tensor
 
         return preds
     
     def top_backward(self):
-        grads = self.gradient_tensor.grad
+
+        # self.gradient_tensor.backward(torch.ones_like(self.gradient_tensor))
+        
+        grads = self.tensor.grad
 
         return grads
 
@@ -47,7 +51,7 @@ class TopSL:
 
 
 #基本設定
-epochs = 1 #ここはクライアント側と同じ値にする
+epochs = 5 #ここはクライアント側と同じ値にする
 input_size = 784
 hidden_sizes = [128, 640]
 output_size = 10
@@ -103,11 +107,10 @@ print("---Receiving label from Client---")
 compressed_label = b""
 while True:
     chunk = connection.recv(1024)
-    if chunk.endswith(b"END"):
-        chunk = chunk[:-3]
-        compressed_label += chunk
-        break
     compressed_label += chunk
+    if chunk.endswith(b"END"):
+        compressed_label = compressed_label[:-3]
+        break
 
 uncompressed_label = zlib.decompress(compressed_label)
 train_label = pickle.loads(uncompressed_label)
@@ -115,17 +118,6 @@ print(">> Finished receiving label from Client\n")
 print("---Sorting label---")
 train_label = sorted(train_label, key=lambda x:x[1])
 print(">> Finished sorting label\n")
-
-# label_list = []
-# for i in range(len(train_label)):
-#     label_list.append(train_label[i][0])
-# print(label_list)
-# label_list = np.array(label_list)
-# label_list = torch.tensor(label_list)
-# print(label_list)
-
-# train_label = torch.empty(0)
-# train_label = torch.cat([train_label, torch.tensor(label_list)])
 
 connection.close()
 
@@ -142,8 +134,8 @@ for i in range(epochs):
     count = 0
 
     for label, ids in dataloader:
-        count += 1
-        print(f"---Data {count}/{len(dataloader)}---")
+        # count += 1
+        # print(f"---Data {count}/{len(dataloader)}---")
 
         server_socket.listen(client_size)
         connection, client_address = server_socket.accept()
@@ -153,11 +145,10 @@ for i in range(epochs):
         compressed_smashed_data = b""
         while True:
             chunk = connection.recv(1024)
-            if chunk.endswith(b"END"):
-                chunk = chunk[:-3]
-                compressed_smashed_data += chunk
-                break
             compressed_smashed_data += chunk
+            if compressed_smashed_data.endswith(b"END"):
+                compressed_smashed_data = compressed_smashed_data[:-3]
+                break
 
         uncompressed_smashed_data = zlib.decompress(compressed_smashed_data)
         smashed_data = pickle.loads(uncompressed_smashed_data)
@@ -167,11 +158,8 @@ for i in range(epochs):
         criterion = nn.NLLLoss()
         loss = criterion(preds, label)
 
-        print(loss)
-
         loss.backward()
         grads = TopSL.top_backward()
-        print(grads)
         TopSL.step()
 
         serialized_grads = pickle.dumps(grads)
