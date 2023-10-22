@@ -7,6 +7,7 @@ add_ids(data, label)
 出力: IDを付与して、ID順にソートした入力データ、IDを付与してシャッフルした正解ラベル
 """
 def add_ids(data, label):
+    label = label.astype(np.int64)
     #データとラベルのサイズが異なる場合はエラーを返す
     if len(data) != len(label):
         raise RuntimeError(">> Error: data and label are not same length.")
@@ -17,8 +18,8 @@ def add_ids(data, label):
     np.random.shuffle(ids)
 
     #IDを付与するためのリストを作成
-    new_data = [[] for _ in range(len(data))]
-    new_label = [[] for _ in range(len(data))]
+    new_data = [[] for _ in range(len(data))] #サイズは60000
+    new_label = [[] for _ in range(len(data))] #サイズは60000
     
     #データとラベルにIDを付与
     for i in range(len(data)):
@@ -26,7 +27,7 @@ def add_ids(data, label):
         new_data[i].append(ids[i])
         new_label[i].append(label[i])
         new_label[i].append(ids[i])
-    
+
     #データはID順にソート、ラベルはシャッフルする
     new_data.sort(key=lambda x:x[1])
     np.random.shuffle(new_label)
