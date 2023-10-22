@@ -9,6 +9,7 @@ import zlib
 import module.about_id as id
 from torch.utils.data import DataLoader
 import numpy as np
+from time import sleep
 
 ##########################################################################################
 class BottomSL:
@@ -17,10 +18,15 @@ class BottomSL:
         self.optimizer = optimizer
     
     def bottom_forward(self, input):
-        return None
+        smashed_data = []
+        smashed_data.append(self.model(input))
+
+        self.smashed_data = smashed_data
+
+        return smashed_data
     
     def bottom_backward(self, gradient): #多分入力がサーバからの勾配になるはず
-        return None
+        self.smashed_data[0].backward(gradient)
     
     def zero_grads(self):
         self.optimizer.zero_grad()
@@ -29,7 +35,7 @@ class BottomSL:
         self.optimizer.step()
 
 chunk_size = 1024
-epochs = 5
+epochs = 1 #ここはサーバ側と同じ値にする
 
 ##########################################################################################
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -50,7 +56,7 @@ print(">> Finished receiving compressed model from Server\n")
 uncomporessed_model = zlib.decompress(compressed_model)
 bottom_model = pickle.loads(uncomporessed_model)
 
-optimizer = optim.SGD(bottom_model.parameters(), lr=0.003,)
+optimizer = optim.SGD(bottom_model.parameters(), lr=0.003,) #オプティマイザーの定義
 
 #データセットの読み込み
 load_file = "./../dataset/MNIST/MNIST.pkl"
@@ -80,32 +86,46 @@ while start < len(compressed_label):
     start = end
 print(">> Finished sending label to Server\n")
 
+client_socket.close()
+
 ##########################################################################################
 dataloader = DataLoader(train_data, batch_size=128, shuffle=False)
 BottomSL = BottomSL(bottom_model, optimizer)
 
-"""
-train(input, gradient, BottomSL)
-入力はデータセットのデータ、サーバからの勾配、BottomSLのインスタンス
-"""
-def train(input, gradient, BottomSL):
-    #1) Zero our grads
-    BottomSL.zero_grads()
-
-    #2) Make a smashed data
-    smashed_data = BottomSL.bottom_forward(input)
-
-    #3) Backward
-    BottomSL.bottom_backward(gradient)
-
-    #4) Change the weights
-    BottomSL.step()
-
-    return None
-
 for i in range(epochs):
+    print(f"---Epoch {i+1}/{epochs}---")
 
-    break
+    for data, ids in dataloader:
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.connect(server_address)
+
+        BottomSL.zero_grads()
+        smashed_data = BottomSL.bottom_forward(data.float())
+        serialized_shamshed_data = pickle.dumps(smashed_data)
+        compressed_shamshed_data = zlib.compress(serialized_shamshed_data) + b"END"
+
+        start = 0
+        while start < len(compressed_shamshed_data):
+            end = start + chunk_size
+            client_socket.sendall(compressed_shamshed_data[start:end])
+            start = end
+        
+        compressed_shamshed_data = compressed_shamshed_data[:-3]
+        print(len(compressed_shamshed_data))
+
+        compressed_gradient = b""
+        while True:
+            chunk = client_socket.recv(1024)
+            compressed_gradient += chunk
+            if chunk == b"":
+                break
+        
+        BottomSL.step()
+
+        uncompressed_gradient = zlib.decompress(compressed_gradient)
+        gradient = pickle.loads(uncompressed_gradient)
+
+        BottomSL.bottom_backward(gradient)
+        client_socket.close()
 
 print("---Disconnection---")
-client_socket.close()

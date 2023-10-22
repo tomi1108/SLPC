@@ -7,6 +7,7 @@ import socket
 import pickle
 import zlib
 from time import sleep
+from torch.utils.data import DataLoader
 
 class TopSL:
     def __init__(self, model, optimizer):
@@ -14,10 +15,21 @@ class TopSL:
         self.optimizer = optimizer
     
     def top_forward(self, smashed_data):
-        return None
+        preds = []
+        tensor = []
+
+        tensor.append(smashed_data.detach().requires_grad_())
+        preds.append(self.model(smashed_data))
+
+        self.preds = preds
+        self.tensor = tensor
+
+        return preds
     
     def top_backward(self):
-        return None
+        grads = self.tensor[0].grad.copy()
+
+        return grads
 
     def zero_grads(self):
         self.optimizer.zero_grad()
@@ -27,7 +39,7 @@ class TopSL:
 
 
 #基本設定
-epochs = 5
+epochs = 1 #ここはクライアント側と同じ値にする
 input_size = 784
 hidden_sizes = [128, 640]
 output_size = 10
@@ -49,12 +61,6 @@ models = [
         nn.Linear(hidden_sizes[1], output_size),
         nn.LogSoftmax(dim=1)
     ),
-]
-
-#オプティマイザの定義
-optimizers = [
-    optim.SGD(model.parameters(), lr=0.003,)
-    for model in models
 ]
 
 #モデルのシリアライズ・圧縮
@@ -80,8 +86,9 @@ while start < len(compressed_model):
     connection.sendall(compressed_model[start:end])
     start = end
 print(">> Finished sending compressed model to Client\n")
-#上位モデルの定義
-top_model = models[1]
+
+top_model = models[1] #上位モデルの定義
+optimizer = optim.SGD(top_model.parameters(), lr=0.003,) #オプティマイザーの定義
 
 #クライアントからラベルを受信
 print("---Receiving label from Client---")
@@ -91,6 +98,7 @@ while True:
     compressed_label += chunk
     if len(chunk) < 1024:
         break
+
 uncompressed_label = zlib.decompress(compressed_label)
 train_label = pickle.loads(uncompressed_label)
 print(">> Finished receiving label from Client\n")
@@ -98,35 +106,64 @@ print("---Sorting label---")
 train_label = sorted(train_label, key=lambda x:x[1])
 print(">> Finished sorting label\n")
 
-"""
-train(shamsed_data, train_label, TopSL)
-入力はクライアントからのスマッシュデータ、クライアントからのラベル、TopSLのインスタンス
-出力は損失、予測値
-"""
-def train(smashed_data, train_label, TopSL):
-    #1) Zero our grads
-    TopSL.zero_grads()
+connection.close()
 
-    #2) Make a prediction
-    pred = TopSL.top_forward(smashed_data)
+##########################################################################################
+dataloader = DataLoader(train_label, batch_size=128, shuffle=False)
+TopSL = TopSL(top_model, optimizer)
 
-    #3) Figure out how much we missed by
-    criterion = nn.NLLLoss()
-    loss = criterion(pred, train_label)
+#学習開始
+for i in range(epochs):
+    print(f"---Epoch {i+1}/{epochs}---")
+    running_loss = 0
+    correct_preds = 0
+    total_preds = 0
 
-    #4) Backprop the loss on the end layer
-    loss.backward()
+    for label, ids in dataloader:
+        server_socket.listen(client_size)
+        connection, client_address = server_socket.accept()
+        TopSL.zero_grads()
 
-    #5) Feed Gradients backward through the nework
-    TopSL.top_backward()
+        compressed_smashed_data = b""
+        while True:
+            chunk = connection.recv(1024)
+            if chunk.endswith(b"END"):
+                chunk = chunk[:-3]
+                compressed_smashed_data += chunk
+                break
+            compressed_smashed_data += chunk
+        
+        print(len(compressed_smashed_data))
+        uncompressed_smashed_data = zlib.decompress(compressed_smashed_data)
+        smashed_data = pickle.loads(uncompressed_smashed_data)
 
-    #6) Change the weights
-    TopSL.step()
+        print("check1")
+        #上位モデルの順伝播
+        preds = TopSL.top_forward(smashed_data)
+        print("check2")
 
-    return loss, pred
+        criterion = nn.NLLLoss()
+        loss = criterion(preds[0], label)
 
+        loss.backward()
+        grads = TopSL.backward()
+        TopSL.step()
 
-sleep(5)
+        serialized_grads = pickle.dumps(grads)
+        compressed_grads = zlib.compress(serialized_grads)
+
+        start = 0
+        while start < len(compressed_grads):
+            end = start + chunk_size
+            connection.sendall(compressed_grads[start:end])
+            start = end
+
+        running_loss += loss.get()
+        correct_preds += preds.max(1)[1].eq(label).sum().item()
+        total_preds += preds.get().size(0)
+
+        connection.close()
+    print(f"Epoch {i} - Training loss: {running_loss/len(dataloader):.3f} - Training accuracy: {100*correct_preds/total_preds:.3f}\n")
 
 print("---Disconnection---")
-connection.close()
+server_socket.close()
