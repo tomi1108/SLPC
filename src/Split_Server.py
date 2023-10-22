@@ -8,6 +8,7 @@ import pickle
 import zlib
 from time import sleep
 from torch.utils.data import DataLoader
+import numpy as np
 
 class TopSL:
     def __init__(self, model, optimizer):
@@ -15,19 +16,23 @@ class TopSL:
         self.optimizer = optimizer
     
     def top_forward(self, smashed_data):
-        preds = []
-        tensor = []
+        
+        tensor = smashed_data[0].detach().requires_grad_()
+        preds = self.model(tensor)
 
-        tensor.append(smashed_data.detach().requires_grad_())
-        preds.append(self.model(smashed_data))
+        # for i in range(len(smashed_data)):
+        #     tensor1.append(torch.tensor(smashed_data[i]))
 
-        self.preds = preds
-        self.tensor = tensor
+        # tensor2.append(tensor1.detach().requires_grad_())
+        # preds.append(self.model(smashed_data))
+
+        # self.preds = preds
+        # self.tensor = tensor2
 
         return preds
     
     def top_backward(self):
-        grads = self.tensor[0].grad.copy()
+        grads = self.tensor2[0].grad.copy()
 
         return grads
 
@@ -65,7 +70,7 @@ models = [
 
 #モデルのシリアライズ・圧縮
 serialized_model = pickle.dumps(models[0])
-compressed_model = zlib.compress(serialized_model)
+compressed_model = zlib.compress(serialized_model) + b"END"
 
 #ソケットの定義
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -95,9 +100,11 @@ print("---Receiving label from Client---")
 compressed_label = b""
 while True:
     chunk = connection.recv(1024)
-    compressed_label += chunk
-    if len(chunk) < 1024:
+    if chunk.endswith(b"END"):
+        chunk = chunk[:-3]
+        compressed_label += chunk
         break
+    compressed_label += chunk
 
 uncompressed_label = zlib.decompress(compressed_label)
 train_label = pickle.loads(uncompressed_label)
@@ -105,6 +112,17 @@ print(">> Finished receiving label from Client\n")
 print("---Sorting label---")
 train_label = sorted(train_label, key=lambda x:x[1])
 print(">> Finished sorting label\n")
+
+# label_list = []
+# for i in range(len(train_label)):
+#     label_list.append(train_label[i][0])
+# print(label_list)
+# label_list = np.array(label_list)
+# label_list = torch.tensor(label_list)
+# print(label_list)
+
+# train_label = torch.empty(0)
+# train_label = torch.cat([train_label, torch.tensor(label_list)])
 
 connection.close()
 
@@ -122,6 +140,7 @@ for i in range(epochs):
     for label, ids in dataloader:
         server_socket.listen(client_size)
         connection, client_address = server_socket.accept()
+
         TopSL.zero_grads()
 
         compressed_smashed_data = b""
@@ -132,25 +151,24 @@ for i in range(epochs):
                 compressed_smashed_data += chunk
                 break
             compressed_smashed_data += chunk
-        
-        print(len(compressed_smashed_data))
+
         uncompressed_smashed_data = zlib.decompress(compressed_smashed_data)
         smashed_data = pickle.loads(uncompressed_smashed_data)
 
-        print("check1")
         #上位モデルの順伝播
         preds = TopSL.top_forward(smashed_data)
-        print("check2")
 
+        print(label)
+        print(ids)
         criterion = nn.NLLLoss()
-        loss = criterion(preds[0], label)
+        loss = criterion(preds, label)
 
         loss.backward()
         grads = TopSL.backward()
         TopSL.step()
 
         serialized_grads = pickle.dumps(grads)
-        compressed_grads = zlib.compress(serialized_grads)
+        compressed_grads = zlib.compress(serialized_grads) + b"END"
 
         start = 0
         while start < len(compressed_grads):

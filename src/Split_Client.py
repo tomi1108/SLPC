@@ -47,9 +47,12 @@ print("---Receiving compressed model from Server---")
 compressed_model = b""
 while True:
     chunk = client_socket.recv(1024)
-    compressed_model += chunk
-    if len(chunk) < 1024:
+    if chunk.endswith(b"END"):
+        chunk = chunk[:-3]
+        compressed_model += chunk
         break
+    compressed_model += chunk
+
 print(">> Finished receiving compressed model from Server\n")
 
 #下位モデルの解凍・デシリアライズ
@@ -70,14 +73,15 @@ test_label = dataset['test_label']
 
 #データセットにIDを付与して、順番を入れ替える
 train_data, train_label = id.add_ids(train_data, train_label)
-"""
-ここにテストデータセットについても同様の処理を行うような記述を追加する
-"""
+
+
+
+
 
 #Serverにラベルを送信する
 print("---Sending label to Server---")
 serialized_label = pickle.dumps(train_label)
-compressed_label = zlib.compress(serialized_label)
+compressed_label = zlib.compress(serialized_label) + b"END"
 
 start = 0
 while start < len(compressed_label):
@@ -96,30 +100,35 @@ for i in range(epochs):
     print(f"---Epoch {i+1}/{epochs}---")
 
     for data, ids in dataloader:
+        #サーバとのタイミングを同期
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_socket.connect(server_address)
 
+        #1)下位モデルの勾配を初期化
         BottomSL.zero_grads()
+
+        #2)下位モデルにデータを入力し、出力を圧縮
         smashed_data = BottomSL.bottom_forward(data.float())
         serialized_shamshed_data = pickle.dumps(smashed_data)
         compressed_shamshed_data = zlib.compress(serialized_shamshed_data) + b"END"
 
+        #3)圧縮したデータをサーバに送信
         start = 0
         while start < len(compressed_shamshed_data):
             end = start + chunk_size
             client_socket.sendall(compressed_shamshed_data[start:end])
             start = end
         
-        compressed_shamshed_data = compressed_shamshed_data[:-3]
-        print(len(compressed_shamshed_data))
-
+        #4)サーバから勾配を受信
         compressed_gradient = b""
         while True:
             chunk = client_socket.recv(1024)
-            compressed_gradient += chunk
-            if chunk == b"":
+            if chunk.endswith(b"END"):
+                chunk = chunk[:-3]
+                compressed_gradient += chunk
                 break
-        
+            compressed_gradient += chunk
+
         BottomSL.step()
 
         uncompressed_gradient = zlib.decompress(compressed_gradient)
