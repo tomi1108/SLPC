@@ -13,7 +13,7 @@ import zlib
 import time
 
 # 基本設定
-epochs = 5
+epochs = 2
 input_size = 784
 hidden_size = [128, 64]
 output_size = 10
@@ -25,7 +25,7 @@ dataloaders = []
 compressed_label = b""
 g_end_flag = b"END"
 g_chunk_size = 1024
-g_client_num = 2
+g_client_num = 3
 g_train_flag = 0
 
 # モデル
@@ -90,6 +90,7 @@ def batch_training(client_number, connection, dataloader, TopSL):
 
     batch_training_count = 1
     for label, id  in dataloader:
+
         while (g_train_flag % g_client_num) != client_number:
             pass
 
@@ -98,6 +99,7 @@ def batch_training(client_number, connection, dataloader, TopSL):
         print(f"Client {client_number}: {batch_training_count}/{len(dataloader)}")
         batch_training_count += 1
 
+        connection.send(b"START")
         train_compressed_smashed_data = b""
         while True:
             chunk = connection.recv(g_chunk_size)
@@ -105,7 +107,8 @@ def batch_training(client_number, connection, dataloader, TopSL):
             if train_compressed_smashed_data.endswith(g_end_flag):
                 train_compressed_smashed_data = train_compressed_smashed_data[:-len(g_end_flag)]
                 break
-
+        connection.send(b"END")
+        
         train_uncompressed_smashed_data = zlib.decompress(train_compressed_smashed_data)
         train_smashed_data = pickle.loads(train_uncompressed_smashed_data)
 
@@ -120,11 +123,22 @@ def batch_training(client_number, connection, dataloader, TopSL):
         train_serialized_grads = pickle.dumps(train_grads)
         train_compressed_grads = zlib.compress(train_serialized_grads) + g_end_flag
 
+        start = b""
+        while True:
+            start = connection.recv(g_chunk_size)
+            if start == b"START":
+                break
+
         train_start = 0
         while train_start < len(train_compressed_grads):
             train_end = train_start + g_chunk_size
             connection.send(train_compressed_grads[train_start:train_end])
             train_start = train_end
+
+        while True:
+            end = connection.recv(g_chunk_size)
+            if end == b"END":
+                break
         
         g_running_loss += train_loss.item()
         g_correct_preds += train_preds.max(1)[1].eq(label).sum().item()
@@ -197,6 +211,7 @@ for i in range(epochs):
     threads = []
     for j in range(g_client_num):
         threads.append(myThread(j, connections[j], dataloaders[j], TopSL))
+
     for j in range(g_client_num):
         threads[j].start()
 
@@ -205,7 +220,7 @@ for i in range(epochs):
 
     g_train_flag = 0
 
-    print(f"Epoch {i+1} - Training loss: {g_running_loss/len(dataloaders[0])*g_client_num:.3f} - Training accuracy: {100*g_correct_preds/g_total_preds:.3f}\n")
+    print(f"Epoch {i+1} - Training loss: {g_running_loss/g_client_num:.3f} - Training accuracy: {100*g_correct_preds/g_total_preds:.3f}\n")
 
 print("Finished training!")
 

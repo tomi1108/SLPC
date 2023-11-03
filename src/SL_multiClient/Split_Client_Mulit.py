@@ -11,7 +11,7 @@ import time
 
 # 基本設定
 send_start = 0
-epochs = 5
+epochs = 2
 chunck_size = 1024
 compressed_model = b""
 end_flag = b"END"
@@ -98,17 +98,29 @@ for i in range(epochs):
 
         BottomSL.zero_grad()
 
-        time.sleep(0.5)
         smashed_data = BottomSL.bottom_forward(data.float())
         serialized_smashed_data = pickle.dumps(smashed_data)
         compressed_smashed_data = zlib.compress(serialized_smashed_data) + end_flag
 
+        # サーバの開始合図を待つ
+        start = b""
+        while True:
+            start = client_socket.recv(chunck_size)
+            if start == b"START":
+                break
+        
         while send_start < len(compressed_smashed_data):
             send_end = send_start + chunck_size
             client_socket.send(compressed_smashed_data[send_start:send_end])
             send_start = send_end
         send_start = 0
+
+        while True:
+            end = client_socket.recv(chunck_size)
+            if end == b"END":
+                break
         
+        client_socket.send(b"START")
         compressed_gradient = b""
         while True:
             chunk = client_socket.recv(chunck_size)
@@ -116,7 +128,8 @@ for i in range(epochs):
             if compressed_gradient.endswith(end_flag):
                 compressed_gradient = compressed_gradient[:-len(end_flag)]
                 break
-        
+        client_socket.send(b"END")
+
         uncompressed_gradient = zlib.decompress(compressed_gradient)
         gradient = pickle.loads(uncompressed_gradient)
 
