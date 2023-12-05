@@ -27,9 +27,10 @@ class mnist():
         print(len(test_dataset))
 ############################################################################################################
 class model(nn.Module):
-    def __init__(self, input_dims, num_classes):
+    def __init__(self, input_dims, num_classes, sg_flag):
         super(model, self).__init__()
 
+        self.sg_flag = sg_flag
         self.input_dims = input_dims
         self.num_classes = num_classes
         self.hidden_size = [128, 64]
@@ -98,42 +99,48 @@ class model(nn.Module):
 
     def forward_layer1(self, x):
         out = self.layer1(x)
-        mean_out = out.mean(dim=0)
-        grad = self.sg_layer1(mean_out)
-        grad = grad.reshape(self.hidden_size[0], self.input_dims)
-        bias = self.sg_layer1_bias(mean_out)
-        return out, grad, bias
+        if self.sg_flag == True:
+            mean_out = out.mean(dim=0)
+            grad = self.sg_layer1(mean_out)
+            grad = grad.reshape(self.hidden_size[0], self.input_dims)
+            bias = self.sg_layer1_bias(mean_out)
+            return out, grad, bias
+        return out
     
     def forward_layer2(self, x):
         out = self.layer2(x)
-        mean_out = out.mean(dim=0)
-        grad = self.sg_layer2(mean_out)
-        grad = grad.reshape(self.hidden_size[1], self.hidden_size[0])
-        bias = self.sg_layer2_bias(mean_out)
-        return out, grad, bias
+        if self.sg_flag == True:
+            mean_out = out.mean(dim=0)
+            grad = self.sg_layer2(mean_out)
+            grad = grad.reshape(self.hidden_size[1], self.hidden_size[0])
+            bias = self.sg_layer2_bias(mean_out)
+            return out, grad, bias
+        return out
     
     def forward_layer3(self, x):
         out = self.layer3(x)
-        mean_out = out.mean(dim=0)
-        grad = self.sg_layer3(mean_out)
-        grad = grad.reshape(self.num_classes, self.hidden_size[1])
-        bias = self.sg_layer3_bias(mean_out)
-        return out, grad, bias
+        if self.sg_flag == True:
+            mean_out = out.mean(dim=0)
+            grad = self.sg_layer3(mean_out)
+            grad = grad.reshape(self.num_classes, self.hidden_size[1])
+            bias = self.sg_layer3_bias(mean_out)
+            return out, grad, bias
+        return out
 
 ############################################################################################################
 class classifier():
-    def __init__(self, data):
+    def __init__(self, data, sg_flag):
+        self.sg_flag = sg_flag
         self.train_loader = data.train_loader
         self.test_loader = data.test_loader
         self.input_dims = data.input_dims
         self.num_classes = data.num_classes
         self.num_train = data.num_train
 
-        self.model = model(self.input_dims, self.num_classes)
+        self.model = model(self.input_dims, self.num_classes, self.sg_flag)
 
         self.classificationCriterion = nn.CrossEntropyLoss()
         self.syntheticCriterion = nn.MSELoss()
-        # self.synthesisCriterion2 = nn.MSELoss()
         self.num_epochs = 10
     
     def train_model(self):
@@ -142,29 +149,34 @@ class classifier():
                 false_grad_list = []
                 true_grad_list = []                
                 out = x.reshape(-1, self.input_dims)
-                
-                self.model.optimizer.zero_grad()
-                for j in range(len(self.model.grad_optimizers)):
-                    self.model.grad_optimizers[j].zero_grad()
 
-                for forward in self.model.forwards:
-                    out, grad, bias = forward(out)
-                    false_grad_list.append(grad)
-                    false_grad_list.append(bias)
+                self.model.optimizer.zero_grad()
+                if self.sg_flag == True:
+                    for j in range(len(self.model.grad_optimizers)):
+                        self.model.grad_optimizers[j].zero_grad()
+
+                    for forward in self.model.forwards:
+                        out, grad, bias = forward(out)
+                        false_grad_list.append(grad)
+                        false_grad_list.append(bias)
+                else:
+                    for forward in self.model.forwards:
+                        out = forward(out)
 
                 loss = self.classificationCriterion(out, y)
                 loss.backward(retain_graph=True)
 
-                for j in range(len(self.model.optimizer.param_groups[0]['params'])):
-                    true_grad_list.append(self.model.optimizer.param_groups[0]['params'][j].grad)
+                if self.sg_flag == True:
+                    for j in range(len(self.model.optimizer.param_groups[0]['params'])):
+                        true_grad_list.append(self.model.optimizer.param_groups[0]['params'][j].grad)
+                    
+                    for j in range(len(self.model.grad_optimizers)):
+                        grad_loss = self.syntheticCriterion(false_grad_list[j], true_grad_list[j])
+                        grad_loss.backward(retain_graph=True)
+                        self.model.grad_optimizers[j].step()
                 
-                for j in range(len(self.model.grad_optimizers)):
-                    grad_loss = self.syntheticCriterion(false_grad_list[j], true_grad_list[j])
-                    grad_loss.backward(retain_graph=True)
-                    self.model.grad_optimizers[j].step()
-            
-                for j in range(len(self.model.optimizer.param_groups[0]['params'])):
-                    self.model.optimizer.param_groups[0]['params'][j].grad = true_grad_list[j].detach()
+                    for j in range(len(self.model.optimizer.param_groups[0]['params'])):
+                        self.model.optimizer.param_groups[0]['params'][j].grad = true_grad_list[j].detach()
 
                 self.model.optimizer.step()
             
@@ -176,8 +188,12 @@ class classifier():
         total = 0
         for x, y in self.test_loader:
             out = x.reshape(-1, self.input_dims)
-            for forward in self.model.forwards:
-                out, grad, bias = forward(out)
+            if self.sg_flag == True:
+                for forward in self.model.forwards:
+                    out, grad, bias = forward(out)
+            else:
+                for forward in self.model.forwards:
+                    out = forward(out)
             _, predicted = torch.max(out.data, 1)
             total += y.size(0)
             correct += (predicted == y).sum().item()
@@ -185,7 +201,8 @@ class classifier():
         perf = 100 * correct / total
         return perf
 ############################################################################################################
+sg_flag = False
 data = mnist()
-m = classifier(data)
+m = classifier(data, sg_flag)
 m.train_model()
 ############################################################################################################
