@@ -45,7 +45,7 @@ class model(nn.Module):
 ##########################################################################################################
 send_progress = 0
 num_client = 1
-epoch = 5
+epoch = 1
 output_size = 10
 chunk_size = 1024
 

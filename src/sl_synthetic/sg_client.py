@@ -8,6 +8,7 @@ import zlib
 from torch.utils.data import DataLoader
 import torchvision.datasets as dsets
 import torchvision.transforms as transforms
+import numpy as np
 import time
 
 ############################################################################################################
@@ -29,14 +30,18 @@ class mnist():
         self.train_label = []
         self.test_data = []
         self.test_label = []
-
-        for i in range(self.num_train):
-            self.train_data.append(self.train_dataset[i][0])
-            self.train_label.append(self.train_dataset[i][1])
         
+        train_ids = np.arange(self.num_train)
+        np.random.shuffle(train_ids)
+        for i in range(self.num_train):
+            self.train_data.append(self.train_dataset[train_ids[i]][0])
+            self.train_label.append(self.train_dataset[train_ids[i]][1])
+
+        test_ids = np.arange(self.num_test)
+        np.random.shuffle(test_ids)
         for i in range(self.num_test):
-            self.test_data.append(self.test_dataset[i][0])
-            self.test_label.append(self.test_dataset[i][1])
+            self.test_data.append(self.test_dataset[test_ids[i]][0])
+            self.test_label.append(self.test_dataset[test_ids[i]][1])
         
         self.train_loader = DataLoader(self.train_data, batch_size=batch_size, shuffle=False)
         self.test_loader = DataLoader(self.test_data, batch_size=batch_size, shuffle=False)
@@ -86,7 +91,7 @@ class model(nn.Module):
         
 ############################################################################################################
 send_progress = 0
-epoch = 5
+epoch = 1
 batch_size = 128
 chunk_size = 1024
 
