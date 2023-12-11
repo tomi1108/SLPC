@@ -72,6 +72,7 @@ class model(nn.Module):
         )
 
         self.optimizer = optim.Adam(self.layer1.parameters(), lr=0.001)
+        self.sg_optimizer = optim.Adam(self.sg_model.parameters(), lr=0.001)
         self.sg_optimizers = []
         self.sg_optimizers.append(optim.Adam(self.sg_layer1.parameters(), lr=0.001))
         self.sg_optimizers.append(optim.Adam(self.sg_layer2.parameters(), lr=0.001))
@@ -80,10 +81,17 @@ class model(nn.Module):
     def bottom_forward(self, data):
         self.optimizer.zero_grad()
         self.smashed_data = self.layer1(data)
-        return self.smashed_data
+        mean_output = self.smashed_data.mean(dim=0)
+        grad = self.sg_layer1(mean_output)
+        grad = grad.reshape(self.split_layer_size, self.input_dims)
+        bias = self.sg_layer2(mean_output)
+        return self.smashed_data, grad, bias
+    
+    def sg_backward(self):
+        return 0
     
     def bottom_backward(self, grads):
-        self.smashed_data.backward(grads)
+        self.smashed_data.backward(grads, retain_graph=True)
         self.optimizer.step()
 
     def model_test(self, test_loader):
@@ -92,7 +100,7 @@ class model(nn.Module):
         
 ############################################################################################################
 send_progress = 0
-epoch = 5
+epoch = 2
 batch_size = 128
 chunk_size = 1024
 
@@ -105,7 +113,7 @@ hidden_size = [128, 64]
 ############################################################################################################
 #サーバと接続
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server_address = ('localhost', 4649)
+server_address = ('localhost', 4648)
 # server_address = ('172.31.113.62', 4649)
 client_socket.connect(server_address)
 
@@ -158,12 +166,17 @@ for i in range(epoch):
     count = 0
 
     for data in m.train_loader:
+        grad_loss = 0
         count += 1
         print(f"---Batch {count}/{len(m.train_loader)}---")
+        false_grad_list = []
+        true_grad_list = []
 
         # bottom modelのforward
         data = data.view(-1, m.input_dims)
-        smashed_data = model.bottom_forward(data)
+        smashed_data, sg_grad, sg_bias = model.bottom_forward(data)
+        false_grad_list.append(sg_grad)
+        false_grad_list.append(sg_bias)
 
         # send smashed data
         serialized_smashed_data = pickle.dumps(smashed_data)
@@ -182,7 +195,9 @@ for i in range(epoch):
         send_progress = 0
 
         # sg modelを用いた更新
-        
+        for j in range(len(model.optimizer.param_groups[0]['params'])):
+            model.optimizer.param_groups[0]['params'][j].grad = false_grad_list[j].detach()
+        model.optimizer.step()
 
         # receive grads
         client_socket.send(start_message)
@@ -199,6 +214,75 @@ for i in range(epoch):
 
         # bottom modelのbackward
         model.bottom_backward(grads)
+
+        # sg modelの更新
+        for j in range(len(model.optimizer.param_groups[0]['params'])):
+            true_grad_list.append(model.optimizer.param_groups[0]['params'][j].grad)
+            grad_loss += model.sg_criterion(false_grad_list[j], true_grad_list[j])
+        grad_loss /= len(model.optimizer.param_groups[0]['params'])
+        grad_loss.backward()
+        model.sg_optimizer.step()
+    
+    # サーバにモデルを送信
+    print('Sending model...')
+    layer1_param = model.optimizer.param_groups[0]['params'][0].detach()
+    layer1_bias = model.optimizer.param_groups[0]['params'][1].detach()
+    serialized_layer1_param = pickle.dumps(layer1_param)
+    serialized_layer1_bias = pickle.dumps(layer1_bias)
+    compressed_layer1_param = zlib.compress(serialized_layer1_param) + end_message
+    compressed_layer1_bias = zlib.compress(serialized_layer1_bias) + end_message
+    while True:
+        receive_message = client_socket.recv(chunk_size)
+        if receive_message == start_message:
+            break
+    while send_progress < len(compressed_layer1_param):
+        send_progress += chunk_size
+        client_socket.send(compressed_layer1_param[send_progress-chunk_size:send_progress])
+    while True:
+        receive_message = client_socket.recv(chunk_size)
+        if receive_message == end_message:
+            break
+    send_progress = 0
+    while True:
+        receive_message = client_socket.recv(chunk_size)
+        if receive_message == start_message:
+            break
+    while send_progress < len(compressed_layer1_bias):
+        send_progress += chunk_size
+        client_socket.send(compressed_layer1_bias[send_progress-chunk_size:send_progress])
+    while True:
+        receive_message = client_socket.recv(chunk_size)
+        if receive_message == end_message:
+            break
+    send_progress = 0
+
+    # サーバからモデルを受信
+    print('Receiving model...')
+    compressed_layer1_param = b""
+    compressed_layer1_bias = b""
+    client_socket.send(start_message)
+    while True:
+        chunk = client_socket.recv(chunk_size)
+        compressed_layer1_param += chunk
+        if compressed_layer1_param.endswith(end_message):
+            compressed_layer1_param = compressed_layer1_param[:-len(end_message)]
+            break
+    client_socket.send(end_message)
+    client_socket.send(start_message)
+    while True:
+        chunk = client_socket.recv(chunk_size)
+        compressed_layer1_bias += chunk
+        if compressed_layer1_bias.endswith(end_message):
+            compressed_layer1_bias = compressed_layer1_bias[:-len(end_message)]
+            break
+    client_socket.send(end_message)
+    uncompressed_layer1_param = zlib.decompress(compressed_layer1_param)
+    uncompressed_layer1_bias = zlib.decompress(compressed_layer1_bias)
+    layer1_param = pickle.loads(uncompressed_layer1_param)
+    layer1_bias = pickle.loads(uncompressed_layer1_bias)
+    model.optimizer.param_groups[0]['params'][0].data = layer1_param
+    model.optimizer.param_groups[0]['params'][1].data = layer1_bias
+
 
 client_socket.close()
 ############################################################################################################
