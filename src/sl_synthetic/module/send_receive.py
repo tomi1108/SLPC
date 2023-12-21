@@ -4,9 +4,10 @@ import socket
 
 def send(connection, data):
     send_progress = 0
-    chunk_size = 1024
+    chunk_size = 4096
     start_message = b"START"
     end_message = b"END"
+
     serialized_data = pickle.dumps(data)
     compressed_data = zlib.compress(serialized_data) + end_message
     while True:
@@ -22,10 +23,11 @@ def send(connection, data):
             break
 
 def receive(connection):
-    chunk_size = 1024
+    chunk_size = 4096
     start_message = b"START"
     end_message = b"END"
     compressed_data = b""
+    
     connection.send(start_message)
     while True:
         chunk = connection.recv(chunk_size)
@@ -37,3 +39,14 @@ def receive(connection):
     uncompressed_data = zlib.decompress(compressed_data)
     data = pickle.loads(uncompressed_data)
     return data
+
+def send_flag(number, connection_list):
+    true_flag = b"TRUE"
+    false_flag = b"FALSE"
+
+    for i in range(len(connection_list)):
+        if i == number:
+            send(connection_list[i], true_flag)
+        else:
+            send(connection_list[i], false_flag)
+    return
